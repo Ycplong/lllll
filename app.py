@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, render_template, request, send_from_directory
 from flask_migrate import Migrate
 from PIL import Image
-from sqlalchemy import and_
+from sqlalchemy import and_, create_engine,text
 from werkzeug.utils import secure_filename
 
 
@@ -21,6 +21,11 @@ from models import db, Machine, TestResult, TestTask
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'machines.db')
+
+engine = create_engine('sqlite:///' + os.path.join(basedir, 'machines.db'))
+with engine.connect() as connection:
+    connection.execute(text("VACUUM"))
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
@@ -406,9 +411,9 @@ def run_func_test(task_info):
                         image_path = f"/path/to/images/{machine_id}_{wafer_id}_image.png"
 
                         # 模拟处理结果
-                        if random.random() < 0.5:  # 50%成功率
-                            file_status = 'success' if random.random() < 0.5 else 'failure'
-                            image_status = 'success' if random.random() < 0.5 else 'failure'
+                        if random.random() < 0.9:  # 50%成功率
+                            file_status = 'success' if random.random() < 0.9 else 'failure'
+                            image_status = 'success' if random.random() < 0.9 else 'failure'
                         else:
                             file_status = 'error'
                             image_status = 'error'
@@ -475,7 +480,10 @@ def get_task(task_id):
 def get_dashboard():
     """获取看板统计数据"""
     # 查询所有测试结果
-    all_results = TestResult.query.all()
+    all_results = db.session.query(TestResult.image_status,TestResult.file_status).filter(TestResult.image_status != "pending").all()
+
+
+    # all_results = db.session.query(TestResult).all()
     # 初始化计数器
     total_files = len(all_results) * 2  # 每个结果有文件和图片两个状态
     success_files = 0
@@ -679,7 +687,11 @@ def stress_test(machine_data):
 
             # 模拟处理每个芯片
             for wafer_id in wafer_id_lst:
-
+                image_status  = random.choices(
+                    ['success', 'failure', 'error'],
+                    weights=[0.5, 0.3, 0.2],
+                    k=1
+                )[0]
                 status = random.choices(
                     ['success', 'failure', 'error'],
                     weights=[0.5, 0.3, 0.2],
@@ -691,6 +703,7 @@ def stress_test(machine_data):
                     test_task_id=task.id,
                     wafer_id=wafer_id,
                     file_status=status,
+                    image_status = image_status,
                     machine_id=machine_id,
                     iteration=iteration
                 )

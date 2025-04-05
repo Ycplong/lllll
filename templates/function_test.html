@@ -216,9 +216,16 @@
                 },
                 error: function(xhr) {
                     let errorMsg = '请求失败';
-                    if (xhr.responseJSON && xhr.responseJSON.error) {
-                        errorMsg += ': ' + xhr.responseJSON.error;
-                    }
+                        // 如果状态码是 429 (频繁请求)
+            if (xhr.status === 429) {
+                errorMsg = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : '请求过于频繁，请稍后再试';
+            } else if (xhr.responseJSON) {
+                errorMsg += ': ' + (xhr.responseJSON.message || '未知错误');
+            } else {
+                errorMsg += ': 无法解析响应';
+            }
                     showAlert(errorMsg);
                     console.error("完整错误:", xhr.responseText);
                 },

@@ -5,7 +5,7 @@ from models import db, Machine
 
 def insert_sample_machines():
     sample_machines = []
-    for i in range(11):
+    for i in range(22,1000):
         product_id = "p100"+str(i)
         step_id = "step1"+str(i)
         x=  {

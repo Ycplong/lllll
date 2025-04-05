@@ -1,0 +1,12 @@
+.sidebar {
+    /* ... 其他现有样式 ... */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    padding: 100px 0;  /* 上下增加内边距 */
+}
+
+.sidebar a {
+    /* ... 其他现有样式 ... */
+    margin: 15px 0;    /* 增加每个链接之间的间距 */
+}

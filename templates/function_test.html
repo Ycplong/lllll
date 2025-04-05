@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>功能测试</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <style>
+        /* 侧边栏样式 */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            width: 240px;
+            padding-top: 50px;
+        }
+
+        .sidebar .nav-link {
+            font-weight: 500;
+            color: #333;
+            padding: 0.75rem 1rem;
+        }
+
+        .sidebar .nav-link.active {
+            color: #007bff;
+            background-color: rgba(0, 123, 255, 0.1);
+        }
+
+        .sidebar .nav-link:hover {
+            color: #007bff;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #333;
+        }
+
+        /* 主内容区域 */
+        .main-content {
+            margin-left: 240px;
+            padding: 20px;
+        }
+
+        /* 加载动画 */
+        .spinner-border {
+            display: none;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <div class="sidebar bg-light">
+        <div class="sidebar-header">机台压测平台</div>
+        <nav class="nav flex-column">
+            <a class="nav-link" href="/">站点信息</a>
+            <a class="nav-link" href="/stress_test">压测功能</a>
+            <a class="nav-link active" href="/function_test">功能测试</a>
+            <a class="nav-link" href="/dashboard">数据看板</a>
+        </nav>
+    </div>
+
+    <!-- 主内容区域 -->
+    <div class="main-content">
+        <div class="container mt-4">
+            <h2 class="mb-4">功能测试</h2>
+
+            <div class="row">
+                <!-- 机台选择区 -->
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>选择机台</h5>
+                        </div>
+                        <div class="card-body">
+                            <select class="form-select" id="machineSelect">
+                                <option value="" selected disabled>加载机台中...</option>
+                                <!-- 选项将通过JavaScript动态加载 -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 参数配置区 -->
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>参数配置</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="stressTestForm">
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="batchCount" class="form-label">批次数量</label>
+                                        <input type="number" class="form-control" id="batchCount" min="1" max="100" value="1" required>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex justify-content-between">
+                                    <button type="button" class="btn btn-primary" id="startTest">
+                                        开始测试
+                                        <span class="spinner-border spinner-border-sm" id="loadingSpinner" role="status" aria-hidden="true"></span>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div class="modal fade" id="alertModal" tabindex="-1" aria-labelledby="alertModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="alertModalLabel">提示</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="alertModalBody">
+                    <!-- 提示内容将动态填充 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">确定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+    $(document).ready(function() {
+        // 初始化弹窗
+        const alertModal = new bootstrap.Modal(document.getElementById('alertModal'));
+
+        // 1. 加载机台列表
+        function loadMachines() {
+            $.ajax({
+                url: '/api/machines_id_lst',
+                type: 'GET',
+                dataType: 'json',
+                success: function(response) {
+                    const select = $('#machineSelect');
+                    select.empty();
+
+                    if (response.machine_id_lst && response.machine_id_lst.length > 0) {
+                        select.append('<option value="" selected disabled>请选择机台</option>');
+                        $.each(response.machine_id_lst, function(index, machineId) {
+                            select.append($('<option>', {
+                                value: machineId,
+                                text: machineId
+                            }));
+                        });
+                    } else {
+                        select.append('<option value="" selected disabled>暂无可用机台</option>');
+                    }
+                },
+                error: function(xhr) {
+                    $('#machineSelect').html('<option value="" selected disabled>加载机台失败</option>');
+                    showAlert('加载机台列表失败，请刷新页面重试');
+                    console.error("加载机台失败:", xhr.responseText);
+                }
+            });
+        }
+
+        // 2. 显示提示信息
+        function showAlert(message) {
+            $('#alertModalBody').text(message);
+            alertModal.show();
+        }
+
+        // 3. 启动测试
+        $('#startTest').click(function() {
+            const selectedMachine = $('#machineSelect').val();
+            const batchCount = $('#batchCount').val();
+
+            // 验证输入
+            if (!selectedMachine) {
+                showAlert('请先选择机台！');
+                return;
+            }
+
+            if (!batchCount || batchCount < 1) {
+                showAlert('请输入有效的批次数量！');
+                return;
+            }
+
+            // 显示加载状态
+            const button = $(this);
+            button.prop('disabled', true);
+            $('#loadingSpinner').show();
+
+            // 构造请求数据
+            const requestData = {
+                machine_id: selectedMachine,
+                batch_count: batchCount
+            };
+
+            // 发送请求
+            $.ajax({
+                url: '/api/start_function_test',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(requestData),
+                processData: false,
+                dataType: 'json',
+                success: function(response) {
+                    showAlert('测试启动成功: ' + response.message);
+                },
+                error: function(xhr) {
+                    let errorMsg = '请求失败';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg += ': ' + xhr.responseJSON.error;
+                    }
+                    showAlert(errorMsg);
+                    console.error("完整错误:", xhr.responseText);
+                },
+                complete: function() {
+                    button.prop('disabled', false);
+                    $('#loadingSpinner').hide();
+                }
+            });
+        });
+
+        // 页面加载时获取机台列表
+        loadMachines();
+    });
+    </script>
+</body>
+</html>

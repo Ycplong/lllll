@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>机器列表</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="mb-4">机器列表</h1>
+        <button class="btn btn-success mb-4" id="addMachineBtn" data-bs-toggle="modal" data-bs-target="#addMachineModal">新增机台</button>
+        <table class="table table-striped" id="machineTable">
+            <thead>
+                <tr>
+                    <th>机台ID</th>
+                    <th>产品ID</th>
+                    <th>步骤ID</th>
+                    <th>配方ID</th>
+                    <th>评审ID</th>
+                    <th>评审工具</th>
+                    <th>检测工具</th>
+                    <th>样品晶片</th>
+                    <th>机台类型</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- 机器数据将通过 JavaScript 插入 -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 新增机台弹窗 -->
+    <div class="modal fade" id="addMachineModal" tabindex="-1" aria-labelledby="addMachineModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addMachineModalLabel">新增机台</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addMachineForm">
+                        <div class="mb-3">
+                            <label for="machine_id" class="form-label">机台ID</label>
+                            <input type="text" class="form-control" id="machine_id" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="product_id" class="form-label">产品ID</label>
+                            <input type="text" class="form-control" id="product_id" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="step_id" class="form-label">步骤ID</label>
+                            <input type="text" class="form-control" id="step_id" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="recipe_id" class="form-label">配方ID</label>
+                            <input type="text" class="form-control" id="recipe_id" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="review_id" class="form-label">评审ID</label>
+                            <input type="text" class="form-control" id="review_id" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="review_tool" class="form-label">评审工具</label>
+                            <input type="text" class="form-control" id="review_tool" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="inspection_tool" class="form-label">检测工具</label>
+                            <input type="text" class="form-control" id="inspection_tool" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sample_wafers" class="form-label">样品晶片</label>
+                            <input type="text" class="form-control" id="sample_wafers" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="machine_type" class="form-label">机台类型</label>
+                            <input type="text" class="form-control" id="machine_type" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 获取机器数据并插入表格
+        fetch('/api/machines')
+            .then(response => response.json())
+            .then(data => {
+                const tableBody = document.querySelector('#machineTable tbody');
+                tableBody.innerHTML = '';  // 清空表格
+
+                // 遍历数据并插入表格
+                data.forEach(machine => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${machine.machine_id}</td>
+                        <td>${machine.product_id}</td>
+                        <td>${machine.step_id}</td>
+                        <td>${machine.recipe_id}</td>
+                        <td>${machine.review_id}</td>
+                        <td>${machine.review_tool}</td>
+                        <td>${machine.inspection_tool}</td>
+                        <td>${machine.sample_wafers}</td>
+                        <td>${machine.machine_type}</td>
+                        <td>
+                            <button class="btn btn-warning btn-sm" onclick="editMachine(${machine.id})">编辑</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteMachine(${machine.id})">删除</button>
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            })
+            .catch(error => {
+                console.error('获取机器列表失败:', error);
+            });
+
+        // 处理新增机台表单提交
+        document.getElementById('addMachineForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const newMachine = {
+                machine_id: document.getElementById('machine_id').value,
+                product_id: document.getElementById('product_id').value,
+                step_id: document.getElementById('step_id').value,
+                recipe_id: document.getElementById('recipe_id').value,
+                review_id: document.getElementById('review_id').value,
+                review_tool: document.getElementById('review_tool').value,
+                inspection_tool: document.getElementById('inspection_tool').value,
+                sample_wafers: document.getElementById('sample_wafers').value,
+                machine_type: document.getElementById('machine_type').value
+            };
+
+            // 使用 fetch API 将新增的机台信息发送到后端
+            fetch('/api/machines', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newMachine)
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('机台信息已保存！');
+                location.reload();  // 刷新页面以显示新的数据
+            })
+            .catch(error => {
+                console.error('新增机台失败:', error);
+            });
+        });
+
+        // 编辑机台功能
+        function editMachine(id) {
+            // 这里你可以实现弹出编辑表单，填充现有数据，然后进行更新操作
+            alert('编辑机台功能，机台ID: ' + id);
+        }
+
+        // 删除机台功能
+        function deleteMachine(id) {
+            if (confirm('确定要删除这个机台吗？')) {
+                fetch(`/api/machines/${id}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert('机台已删除！');
+                    location.reload();  // 删除后刷新页面
+                })
+                .catch(error => {
+                    console.error('删除机台失败:', error);
+                });
+            }
+        }
+    </script>
+</body>
+</html>

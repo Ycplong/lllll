@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>压测功能</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        select option:checked {
+    background-color: #007bff;
+    color: white;
+}
+
+        /* 侧边栏样式 */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            width: 240px;
+        }
+
+        .sidebar .nav-link {
+            font-weight: 500;
+            color: #333;
+            padding: 0.75rem 1rem;
+        }
+
+        .sidebar .nav-link.active {
+            color: #007bff;
+            background-color: rgba(0, 123, 255, 0.1);
+        }
+
+        .sidebar .nav-link:hover {
+            color: #007bff;
+        }
+
+        /* 主内容区域 */
+        .main-content {
+            margin-left: 240px;
+            padding: 20px;
+        }
+
+        .sidebar-header {
+            padding: 1rem 1rem 0.5rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        /* 压测功能页面样式 */
+        #machineSelectContainer {
+            display: none;
+        }
+
+        select {
+            width: 100%;
+            height: 150px;
+        }
+    </style>
+</head>
+<body>
+    <div class="d-flex">
+        <!-- 侧边栏 -->
+        <div class="sidebar bg-light">
+            <div class="sidebar-header">机台压测平台</div>
+            <nav class="nav flex-column">
+                <a class="nav-link" href="/">站点信息</a>
+                <a class="nav-link active" href="/stress_test">压测功能</a>
+                <a class="nav-link" href="/function_test">功能测试</a>
+                <a class="nav-link" href="/dashboard">数据看板</a>
+            </nav>
+        </div>
+
+        <!-- 主内容区域 -->
+        <div class="main-content">
+            <h2 class="mb-4">压测功能</h2>
+            
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>选择机台</h5>
+                        </div>
+                        <div class="card-body">
+                            <button type="button" class="btn btn-outline-primary" id="toggleMachineSelect">选择机台</button>
+                            
+                            <div id="machineSelectContainer" class="mt-3">
+                                <select id="machineSelect" multiple>
+                                    <!-- Machine options will be dynamically inserted here -->
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Parameters and other sections -->
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>参数配置</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="stressTestForm">
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="startDate" class="form-label">开始时间</label>
+                                        <input type="datetime-local" class="form-control" id="startDate" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="endDate" class="form-label">结束时间</label>
+                                        <input type="datetime-local" class="form-control" id="endDate" required>
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <button type="button" class="btn btn-primary" id="startTest">开始测试</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <script>
+$(document).ready(function() {
+    // 点击按钮显示/隐藏选择机台的下拉框
+    $('#toggleMachineSelect').on('click', function() {
+        $('#machineSelectContainer').toggle();  // Show/Hide select box
+    });
+
+    // 从后端获取机台列表
+    $.ajax({
+        url: '/api/machines_id_lst',
+        method: 'GET',
+        success: function(data) {
+            const machineSelect = $('#machineSelect');
+            machineSelect.empty(); // 清空下拉框中的旧数据
+
+            // 遍历返回的机台列表，动态添加到下拉框
+            data.machine_id_lst.forEach(function(machineId) {
+                // 创建一个新的选项并添加到下拉框
+                machineSelect.append(new Option(machineId, machineId));
+            });
+        },
+        error: function(error) {
+            console.error('获取机台列表失败:', error);
+        }
+    });
+
+    $('#startTest').on('click', function() {
+        const selectedMachines = $('#machineSelect').val();  // 获取选中的机台名称
+        const startDate = $('#startDate').val();             // 获取开始时间
+        const endDate = $('#endDate').val();                 // 获取结束时间
+
+        if (!selectedMachines || selectedMachines.length === 0) {
+            alert('请选择机台！');
+            return;
+        }
+
+        if (!startDate || !endDate) {
+            alert('请选择开始时间和结束时间！');
+            return;
+        }
+
+        // 将选择的机台名称、开始时间和结束时间封装为请求数据
+        const requestData = {
+            machines: selectedMachines,  // 选择的机台名称
+            start_time: startDate,       // 开始时间
+            end_time: endDate           // 结束时间
+        };
+
+        // 发送POST请求到后端
+        $.ajax({
+            url: '/api/stress_test',  // 后端接口
+            method: 'POST',           // 使用POST方法
+            contentType: 'application/json',  // 设置请求头为JSON
+            data: JSON.stringify(requestData), // 将数据对象转换为JSON字符串
+            success: function(response) {
+                // 处理后端返回的响应数据
+                alert('测试已开始！响应: ' + JSON.stringify(response));
+            },
+            error: function(xhr, status, error) {
+                // 错误处理
+                alert('请求失败，请稍后再试。');
+                console.error('错误:', error);
+            }
+        });
+    }); // 这里之前缺少了这个闭合括号和分号
+}); // 这是document.ready的闭合括号
+</script>
+</body>
+</html>

@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>机台压测平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* 侧边栏样式 */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+            width: 240px;
+        }
+
+        .sidebar .nav-link {
+            font-weight: 500;
+            color: #333;
+            padding: 0.75rem 1rem;
+        }
+
+        .sidebar .nav-link.active {
+            color: #007bff;
+            background-color: rgba(0, 123, 255, 0.1);
+        }
+
+        .sidebar .nav-link:hover {
+            color: #007bff;
+        }
+
+        /* 主内容区域 */
+            .main-content {
+        margin-left: 240px;
+        padding: 20px;
+        width: calc(100% - 240px); /* 自动计算宽度，填满剩余空间 */
+        box-sizing: border-box; /* 防止 padding 影响总宽度 */
+    }
+
+        .sidebar-header {
+            padding: 1rem 1rem 0.5rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        /* 搜索框样式 */
+        .search-bar {
+            margin-bottom: 20px;
+        }
+
+        .add-machine-btn {
+            margin-left: 10px; /* 调整按钮间距 */
+        }
+
+        /* 图片预览样式 */
+        #imagePreview {
+            max-width: 680px;
+            max-height: 680px;
+            display: none;
+            margin-top: 10px;
+        }
+
+        /* 按钮组样式 */
+        .button-group {
+            display: flex;
+            justify-content: flex-end;
+        }
+    </style>
+</head>
+<body>
+    <div class="d-flex">
+        <!-- 侧边栏 -->
+        <div class="sidebar bg-light">
+            <div class="sidebar-header">机台压测平台</div>
+            <nav class="nav flex-column">
+                <a class="nav-link active" href="/">站点信息</a>
+                <a class="nav-link" href="/stress_test">压测功能</a>
+                <a class="nav-link" href="/function_test">功能测试</a>
+                <a class="nav-link" href="/dashboard">数据看板</a>
+            </nav>
+        </div>
+
+        <!-- 主内容区域 -->
+        <div class="main-content">
+            <h1 class="mb-4">机器列表</h1>
+
+            <!-- 站点信息展示区域 -->
+            <div id="siteInfo" class="mb-4">
+                <!-- 站点信息将在这里显示 -->
+            </div>
+
+            <!-- 搜索区域 -->
+            <div class="search-bar d-flex justify-content-between">
+                <div class="d-flex">
+                    <div class="me-2">
+                        <label for="searchProductId" class="form-label">product_id:</label>
+                        <input type="text" id="searchProductId" class="form-control" placeholder="product_id">
+                    </div>
+                    <div class="me-2">
+                        <label for="searchStepId" class="form-label">step_id:</label>
+                        <input type="text" id="searchStepId" class="form-control" placeholder="step_id">
+                    </div>
+                    <!-- 新增搜索按钮 -->
+            <div class="align-self-end">
+                <button class="btn btn-primary" id="searchBtn">搜索</button>
+                <button class="btn btn-secondary" id="resetBtn">重置</button>
+            </div>
+
+
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-success" id="addMachineBtn" data-bs-toggle="modal" data-bs-target="#addMachineModal">新增机台</button>
+                    <button class="btn btn-primary add-machine-btn" id="uploadImageBtn">拍摄/上传图片</button>
+                    <input type="file" id="imageUpload" accept="image/*" capture="camera" style="display: none;">
+                </div>
+            </div>
+
+            <!-- 图片预览 -->
+            <div class="mt-3">
+                <img id="imagePreview" class="img-thumbnail" alt="预览图片">
+            </div>
+
+            <!-- 机器列表表格 -->
+            <table class="table table-striped" id="machineTable">
+                <thead>
+                    <tr>
+                        <th>machine_id</th>
+                        <th>product_id</th>
+                        <th>step_id</th>
+                        <th>recipe_id</th>
+                        <th>review_id</th>
+                        <th>review_tool</th>
+                        <th>inspection_tool</th>
+                        <th>sample_wafers</th>
+                        <th>machine_type</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 机器数据将通过 JavaScript 插入 -->
+                </tbody>
+            </table>
+                <!-- 新增的分页控件 -->
+    <div class="d-flex justify-content-center mt-3">
+        <ul class="pagination" id="pagination"></ul>
+    </div>
+
+
+        </div>
+    </div>
+
+    <!-- 新增机台弹窗 -->
+    <div class="modal fade" id="addMachineModal" tabindex="-1" aria-labelledby="addMachineModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addMachineModalLabel">新增机台</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addMachineForm">
+                            <div class="mb-3">
+
+        <input type="hidden" class="form-control" id="machine_id" name="machine_id"  required>
+    </div>
+    <div class="mb-3">
+        <label for="product_id" class="form-label">product_id</label>
+        <input type="text" class="form-control" id="product_id" name="product_id" required>
+    </div>
+    <div class="mb-3">
+        <label for="step_id" class="form-label">step_id</label>
+        <input type="text" class="form-control" id="step_id" name="step_id" required>
+    </div>
+    <div class="mb-3">
+        <label for="recipe_id" class="form-label">recipe_id</label>
+        <input type="text" class="form-control" id="recipe_id" name="recipe_id" required>
+    </div>
+    <div class="mb-3">
+        <label for="review_id" class="form-label">review_id</label>
+        <input type="text" class="form-control" id="review_id" name="review_id" required>
+    </div>
+    <div class="mb-3">
+        <label for="review_tool" class="form-label">review_tool</label>
+        <input type="text" class="form-control" id="review_tool" name="review_tool" required>
+    </div>
+    <div class="mb-3">
+        <label for="inspection_tool" class="form-label">inspection_tool</label>
+        <input type="text" class="form-control" id="inspection_tool" name="inspection_tool" required>
+    </div>
+    <div class="mb-3">
+        <label for="sample_wafers" class="form-label">sample_wafers</label>
+        <input type="text" class="form-control" id="sample_wafers" name="sample_wafers" required>
+    </div>
+    <div class="mb-3">
+        <label for="machine_type" class="form-label">machine_type</label>
+        <input type="text" class="form-control" id="machine_type" name="machine_type" required>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+</form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 获取搜索按钮和输入框
+const searchBtn = document.getElementById('searchBtn');
+const resetBtn = document.getElementById('resetBtn');
+const searchProductId = document.getElementById('searchProductId');
+const searchStepId = document.getElementById('searchStepId');
+
+// 存储原始数据
+let allMachines = [];
+
+// 搜索功能
+searchBtn.addEventListener('click', () => {
+    const productId = searchProductId.value.trim();
+    const stepId = searchStepId.value.trim();
+
+    // 如果有搜索条件则过滤，否则显示全部
+    if (productId || stepId) {
+        const filtered = allMachines.filter(machine => {
+            return (!productId || machine.product_id.includes(productId)) &&
+                   (!stepId || machine.step_id.includes(stepId));
+        });
+        renderMachineData(filtered);
+    } else {
+        loadMachineData(1); // 重新加载第一页
+    }
+});
+
+// 重置功能
+resetBtn.addEventListener('click', () => {
+    searchProductId.value = '';
+    searchStepId.value = '';
+    loadMachineData(1);
+});
+
+        // 加载机器数据函数
+        // 全局变量存储分页状态
+let currentPage = 1;
+const itemsPerPage = 10; // 每页显示10条记录
+
+// 修改后的loadMachineData函数
+// 统一加载函数（支持搜索和分页）
+function loadMachineData(page = 1, searchParams = {}) {
+    currentPage = page;
+
+    // 构建查询参数
+    const params = new URLSearchParams({
+        page: page,
+        per_page: itemsPerPage,
+        ...searchParams
+    });
+
+    fetch(`/api/machines?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            renderTable(data.items);
+            renderPagination(data.total, data.pages, page, searchParams);
+        });
+}
+
+// 渲染表格（独立函数）
+function renderTable(items) {
+    const tableBody = document.querySelector('#machineTable tbody');
+    tableBody.innerHTML = items.map(machine => `
+        <tr>
+            <td>${machine.machine_id}</td>
+            <td>${machine.product_id}</td>
+            <td>${machine.step_id}</td>
+            <td>${machine.recipe_id}</td>
+            <td>${machine.review_id}</td>
+            <td>${machine.review_tool}</td>
+            <td>${machine.inspection_tool}</td>
+            <td>${machine.sample_wafers}</td>
+            <td>${machine.machine_type}</td>
+            <td>
+                <button class="btn btn-warning btn-sm" onclick="editMachine('${machine.id}')">编辑</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteMachine('${machine.id}')">删除</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// 改进的分页渲染（保留搜索条件）
+function renderPagination(totalItems, totalPages, currentPage, searchParams = {}) {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+
+    // 上一页
+    if (currentPage > 1) {
+        pagination.innerHTML += `
+            <li class="page-item">
+                <a class="page-link" href="#" onclick="loadMachineData(${currentPage-1}, ${JSON.stringify(searchParams)})">上一页</a>
+            </li>`;
+    }
+
+    // 页码
+    for (let i = 1; i <= totalPages; i++) {
+        pagination.innerHTML += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadMachineData(${i}, ${JSON.stringify(searchParams)})">${i}</a>
+            </li>`;
+    }
+
+    // 下一页
+    if (currentPage < totalPages) {
+        pagination.innerHTML += `
+            <li class="page-item">
+                <a class="page-link" href="#" onclick="loadMachineData(${currentPage+1}, ${JSON.stringify(searchParams)})">下一页</a>
+            </li>`;
+    }
+}
+
+// 搜索功能
+document.getElementById('searchBtn').addEventListener('click', () => {
+    const searchParams = {
+        product_id: document.getElementById('searchProductId').value.trim(),
+        step_id: document.getElementById('searchStepId').value.trim()
+    };
+    loadMachineData(1, searchParams);
+});
+
+// 渲染分页控件
+function renderPagination(totalItems, totalPages, currentPage) {
+    const pagination = document.getElementById('pagination'); // ⚠️ 问题点：HTML中缺少此元素！
+    pagination.innerHTML = '';
+
+    // 上一页按钮
+    const prevLi = document.createElement('li');
+    prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+    prevLi.innerHTML = `<a class="page-link" href="#" onclick="loadMachineData(${currentPage - 1})">上一页</a>`;
+    pagination.appendChild(prevLi);
+
+    // 页码按钮（1, 2, 3...）
+    for (let i = 1; i <= totalPages; i++) {
+        const li = document.createElement('li');
+        li.className = `page-item ${i === currentPage ? 'active' : ''}`;
+        li.innerHTML = `<a class="page-link" href="#" onclick="loadMachineData(${i})">${i}</a>`;
+        pagination.appendChild(li);
+    }
+
+    // 下一页按钮
+    const nextLi = document.createElement('li');
+    nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+    nextLi.innerHTML = `<a class="page-link" href="#" onclick="loadMachineData(${currentPage + 1})">下一页</a>`;
+    pagination.appendChild(nextLi);
+}
+
+
+// 触发文件选择
+document.getElementById('uploadImageBtn').addEventListener('click', function() {
+    document.getElementById('imageUpload').click();
+});
+
+// 直接上传文件
+document.getElementById('imageUpload').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // 简单前端验证
+    const allowedTypes = ['image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+        alert('仅支持JPG/PNG格式图片');
+        return;
+    }
+
+    // 直接上传
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/api/machines/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('上传失败: ' + data.error);
+        } else {
+            alert('上传成功: ' + data.message);
+            // 可以在这里处理上传成功后的逻辑
+            console.log('图片路径:', data.image_path);
+        }
+    })
+    .catch(error => {
+        console.error('上传错误:', error);
+        alert('上传过程中发生错误');
+    });
+});
+
+// 获取当前选择的机台ID（示例，根据你的实际逻辑调整）
+function getCurrentMachineId() {
+    // 这里需要你根据实际业务逻辑获取当前选择的机台ID
+    // 可能是从表格选中行获取，或者从某个全局变量获取
+    return selectedMachineId; // 你需要实现这个逻辑
+}
+// 修改页面加载时的初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadMachineData(1); // 默认加载第一页
+});
+
+        // 编辑机台
+        function editMachine(id) {
+            // 获取机台数据并填充表单
+            fetch(`/api/machine/${id}`)  // 使用GET请求来获取机台数据
+                .then(response => response.json())
+                .then(data => {
+                    if (data) {
+                        // 填充表单
+                        document.getElementById('machine_id').value = data.machine_id;
+                        document.getElementById('product_id').value = data.product_id;
+                        document.getElementById('step_id').value = data.step_id;
+                        document.getElementById('recipe_id').value = data.recipe_id;
+                        document.getElementById('review_id').value = data.review_id;
+                        document.getElementById('review_tool').value = data.review_tool;
+                        document.getElementById('inspection_tool').value = data.inspection_tool;
+                        document.getElementById('sample_wafers').value = data.sample_wafers;
+                        document.getElementById('machine_type').value = data.machine_type;
+
+                        // 显示弹窗
+                        const addMachineModal = new bootstrap.Modal(document.getElementById('addMachineModal'));
+                        addMachineModal.show();
+
+                        // 添加隐藏字段表示这是编辑操作
+                        const form = document.getElementById('addMachineForm');
+                        form.dataset.editMode = 'true';
+                        form.dataset.machineId = id;  // 使用获取的id
+                    }
+                })
+                .catch(error => {
+                    console.error('获取机台数据失败:', error);
+                    alert('获取机台数据失败: ' + error.message);
+                });
+        }
+
+        // 删除机台
+        function deleteMachine(id) {
+            if (confirm('确定要删除该机台吗？')) {
+                fetch(`/api/delete_machine/${id}`, {
+                    method: 'DELETE',
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    throw new Error('删除失败');
+                })
+                .then(data => {
+                    if (data.message && data.message.includes('删除成功')) {
+                        alert('删除成功');
+                        loadMachineData();  // 重新加载机器列表
+                    } else {
+                        alert('删除失败: ' + (data.message || '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    console.error('删除机台失败:', error);
+                    alert('删除失败: ' + error.message);
+                });
+            }
+        }
+
+        // 页面加载时初始化数据
+        document.addEventListener('DOMContentLoaded', function() {
+            loadMachineData();
+        });
+
+        // 处理表单提交
+        document.getElementById('addMachineForm').addEventListener('submit', function(event) {
+            event.preventDefault();  // 防止默认表单提交
+
+            const form = event.target;
+            const isEditMode = form.dataset.editMode === 'true';  // 判断是否是编辑操作
+            const machineId = form.dataset.machineId;  // 获取机台ID
+            const productId = form.querySelector('[name="product_id"]').value;  // 获取 product_id
+            const stepId = form.querySelector('[name="step_id"]').value;  // 获取 step_id
+        
+            // 使用 _ 连接生成 machine_id
+            const generatedMachineId = `${productId}_${stepId}`;  // 按规则生成 machine_id
+        
+            // 将生成的 machine_id 添加到表单数据中
+            form.querySelector('[name="machine_id"]').value = generatedMachineId;
+        
+            const formData = new FormData(form);
+            const data = {};
+            formData.forEach((value, key) => {
+                data[key] = value;
+            });
+
+            let url = '/api/add_machine';
+            let method = 'POST';  // 默认添加机台
+
+            if (isEditMode) {
+                url = `/api/update_machine/${machineId}`;
+                method = 'PUT';  // 更新机台
+            }
+            console.log(data)
+            fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('操作成功: ' + data.message);
+                    // 关闭弹窗，清空表单
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('addMachineModal'));
+                    modal.hide();
+                    form.reset();
+                    delete form.dataset.editMode;
+                    delete form.dataset.machineId;
+                    loadMachineData();  // 重新加载数据
+                } else if (data.error) {
+                    alert('操作失败: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('请求失败:', error);
+                alert('请求失败: ' + error.message);
+            });
+        });
+    </script>
+</body>
+</html>

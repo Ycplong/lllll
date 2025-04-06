@@ -1,36 +1,40 @@
 # 系统内置包
 import os
 import random
+import sqlite3
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, render_template, request
 from flask_migrate import Migrate
 from PIL import Image
 from sqlalchemy import and_, create_engine,text
 from werkzeug.utils import secure_filename
 
 
-from common.util import (CustomLogger,
+from common.util import (SimpleFlaskLogger,
                         process_sample_wafers)
 from models import db, Machine, TestResult, TestTask
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'machines.db')
 
-engine = create_engine('sqlite:///' + os.path.join(basedir, 'machines.db'))
+# 配置数据库连接池
+engine = create_engine('sqlite:///' + os.path.join(basedir, 'machines.db'), pool_size=10, max_overflow=5, pool_timeout=30)
+# 启用 WAL 模式以提升并发能力
 with engine.connect() as connection:
-    connection.execute(text("VACUUM"))
+    connection.execute(text("PRAGMA journal_mode=WAL;"))
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # 2MB
-logger = CustomLogger().get_logger()
+
+logger = SimpleFlaskLogger()
 # 限制并发任务数量和接口访问频率
 MAX_CONCURRENT_TASKS = 10  # 最大并发任务数量
 MAX_REQUESTS_PER_MINUTE = 5  # 每分钟最多请求次数
@@ -68,6 +72,22 @@ MACHINES = {
 # 生产流程定义
 PIPELINE = ["aoi01", "aoi01", "aoi02", "ins02", "review01", "ins01", "review01"]
 
+# 重新定义重试机制
+def execute_with_retry(session, query, max_retries=3, delay=1):
+    retries = 0
+    while retries < max_retries:
+        try:
+            session.execute(query)
+            session.commit()
+            return
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                retries += 1
+                app.logger.warning(f"数据库锁定，重试第 {retries} 次...")
+                time.sleep(delay)
+            else:
+                raise  # 如果不是锁定错误，则抛出异常
+    raise Exception("最大重试次数已达到，数据库仍然锁定")
 
 @app.route('/api/machines_id_lst', methods=['GET', 'POST'])
 def machines_id_lst():
@@ -91,7 +111,7 @@ def machine_list():
     if request.method == 'GET':
         """获取分页机台列表"""
         # 获取分页参数，默认为第1页，每页10条
-        print(request.args)
+
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
         product_id = request.args.get('product_id')
@@ -163,7 +183,7 @@ def machine_resource(id):
 def add_machine():
     """添加新的机台"""
     data = request.get_json()
-    print(data)
+
     # 必填字段验证
     required_fields = ['product_id', 'step_id', 'recipe_id', 'review_id',
                        'review_tool', 'inspection_tool', 'machine_type','sample_wafers']
@@ -310,22 +330,22 @@ def create_function_task():
     current_time = time.time()
     # 检查请求内容类型
     if not request.is_json:
-        app.logger.error(f"无效的Content-Type: {request.content_type}")
+        logger.ERROR(f"无效的Content-Type: {request.content_type}")
         return jsonify({
             "success": False,
             "error": "Content-Type must be application/json"
         }), 415
-    logger.info(f"请求参数{request.get_json()}")
+    logger.INFO(f"请求参数{request.get_json()}")
     # 日志记录请求到达时间
     # 计算每分钟的请求次数
     if current_time - last_fun_request_time > 60:  # 超过一分钟，重置请求计数
         requests_func_count = 0
         last_fun_request_time = current_time
-        logger.info(f"一分钟已过，重置请求计数器。当前时间: {current_time}")
+        logger.INFO(f"一分钟已过，重置请求计数器。当前时间: {current_time}")
 
     # 限制每分钟请求次数
     if requests_func_count >= MAX_REQUESTS_FUN_PER_MINUTE:
-        logger.warning(f"请求过于频繁，每分钟超过最大请求次数: {MAX_REQUESTS_FUN_PER_MINUTE}")
+        app.logger.warning(f"请求过于频繁，每分钟超过最大请求次数: {MAX_REQUESTS_FUN_PER_MINUTE}")
         return jsonify({'message': '请求过于频繁，请稍后再试'}), 429
 
     data = request.get_json()
@@ -339,8 +359,8 @@ def create_function_task():
     task_id = str(uuid.uuid4())
     machine_id = data['machine_id']
     batch_count = data['batch_count']
-    logger.info(f"生成任务ID: {task_id}")
-    print(f"请求参数{request.get_json()}")
+    logger.INFO(f"生成任务ID: {task_id}")
+
     # 创建功能测试任务并保存到数据库
     task_info = TestTask(
         task_id=task_id,
@@ -354,7 +374,7 @@ def create_function_task():
         # 添加其他需要的字段
     }
     # machine_data = task_info.__dict__
-    print(f"machine_data:{machine_data}")
+
     db.session.add(task_info)
     db.session.commit()
 
@@ -363,7 +383,7 @@ def create_function_task():
 
     # 增加请求计数
     requests_func_count += 1
-    logger.info(f"请求计数增加，当前计数: {last_fun_request_time}")
+    logger.INFO(f"请求计数增加，当前计数: {last_fun_request_time}")
 
     return jsonify({'message': '功能测试任务创建成功', 'task_id': task_id}), 201
 
@@ -372,7 +392,7 @@ def run_func_test(task_info):
     """执行功能测试任务"""
     with app.app_context():  # 确保在后台线程中有Flask应用上下文
         try:
-            print(f"task_info:{task_info}")
+
             machine_id = task_info['machine_id']
             task_id = task_info['task_id']
             batch_count = int(task_info['batch_count'])  # 确保是整数
@@ -385,7 +405,7 @@ def run_func_test(task_info):
                 )
             ).first()
             if not task:
-                logger.error(f"任务不存在: {task_id}")
+                logger.ERROR(f"任务不存在: {task_id}")
                 return
 
             # 查询机器信息
@@ -393,7 +413,7 @@ def run_func_test(task_info):
                 Machine.machine_id == machine_id
             ).first()
             if not machine:
-                logger.error(f"机器不存在: {machine_id}")
+                logger.ERROR(f"机器不存在: {machine_id}")
                 return
             wafer_id_lst = process_sample_wafers(machine)
             # 初始化计数器
@@ -401,7 +421,7 @@ def run_func_test(task_info):
             file_failure = 0
             file_error = 0
 
-            logger.info(f"开始处理任务 {task_id}，机台ID: {machine_id}")
+            logger.INFO(f"开始处理任务 {task_id}，机台ID: {machine_id}")
 
             for i in range(batch_count):
                 for wafer_id in wafer_id_lst:
@@ -438,7 +458,7 @@ def run_func_test(task_info):
                         db.session.commit()
 
                     except Exception as e:
-                        logger.exception(f"处理晶圆 {wafer_id} 时出现异常: {e}")
+                        app.logger.exception(f"处理晶圆 {wafer_id} 时出现异常: {e}")
                         db.session.rollback()
 
             # 更新任务统计
@@ -449,13 +469,13 @@ def run_func_test(task_info):
             task.success_rate = file_success / total_operations if total_operations > 0 else 0
             db.session.commit()
 
-            logger.info(
+            logger.INFO(
                 f"任务 {task.id} 完成: 成功 {file_success}, 失败 {file_failure}, "
                 f"错误 {file_error}, 成功率 {task.success_rate:.2%}"
             )
 
         except Exception as e:
-            logger.exception(f"任务处理过程中出现未捕获的异常: {e}")
+            app.logger.exception(f"任务处理过程中出现未捕获的异常: {e}")
 
 
 
@@ -516,7 +536,7 @@ def get_dashboard():
         'success_rate': success_rate,
         'last_updated': datetime.utcnow().isoformat()  # 添加最后更新时间
     }
-    print(data)
+
     return jsonify(data)
 
 
@@ -526,21 +546,21 @@ def stress_test_api():
     global requests_count, last_request_time
 
     current_time = time.time()
-    logger.info(f"收到请求，当前时间: {current_time}")
+    logger.INFO(f"收到请求，当前时间: {current_time}")
 
     # 请求频率控制
     if current_time - last_request_time > 60:
         requests_count = 0
         last_request_time = current_time
-        logger.info(f"一分钟已过，重置请求计数器。当前时间: {current_time}")
+        logger.INFO(f"一分钟已过，重置请求计数器。当前时间: {current_time}")
 
     if requests_count >= MAX_REQUESTS_PER_MINUTE:
-        logger.warning(f"请求过于频繁，每分钟超过最大请求次数: {MAX_REQUESTS_PER_MINUTE}")
+        app.logger.warning(f"请求过于频繁，每分钟超过最大请求次数: {MAX_REQUESTS_PER_MINUTE}")
         return jsonify({'message': '请求过于频繁，请稍后再试'}), 429
 
     data = request.json
     if not data or 'machines' not in data:
-        logger.error("机台列表为空或缺失")
+        logger.ERROR("机台列表为空或缺失")
         return jsonify({'message': '机台列表不能为空'}), 400
 
     # 计算测试持续时间（秒）
@@ -552,17 +572,17 @@ def stress_test_api():
         if duration_seconds <= 0:
             return jsonify({'message': '结束时间必须晚于开始时间'}), 400
     except Exception as e:
-        logger.error(f"时间格式错误: {e}")
+        logger.ERROR(f"时间格式错误: {e}")
         return jsonify({'message': '时间格式不正确，请使用ISO格式'}), 400
 
     machines_id_lst = data['machines']
     if not machines_id_lst:
-        logger.error("机台列表为空")
+        logger.ERROR("机台列表为空")
         return jsonify({'message': '机台列表不能为空'}), 400
 
     # 创建任务ID和任务信息
     task_id = str(uuid.uuid4())
-    logger.info(f"生成任务ID: {task_id}")
+    logger.INFO(f"生成任务ID: {task_id}")
 
     task_info = TestTask(
         task_id=task_id,
@@ -582,7 +602,7 @@ def stress_test_api():
     ).start()
 
     requests_count += 1
-    logger.info(f"请求计数增加，当前计数: {requests_count}")
+    logger.INFO(f"请求计数增加，当前计数: {requests_count}")
 
     return jsonify({
         'message': f'压力测试已开始，将持续{duration_seconds / 60:.1f}分钟',
@@ -600,7 +620,7 @@ def run_continuous_stress_test(machines, duration_seconds, task_id):
 
         while time.time() < end_time and not app.config.get('SHUTDOWN_FLAG'):
             iteration += 1
-            logger.info(f"开始第{iteration}轮压力测试 (剩余时间: {end_time - time.time():.0f}秒)")
+            logger.INFO(f"开始第{iteration}轮压力测试 (剩余时间: {end_time - time.time():.0f}秒)")
 
             futures = []
 
@@ -624,7 +644,7 @@ def run_continuous_stress_test(machines, duration_seconds, task_id):
                 try:
                     future.result(timeout=3600)  # 每个任务最多1小时
                 except Exception as e:
-                    logger.error(f"任务执行失败: {e}")
+                    logger.ERROR(f"任务执行失败: {e}")
 
             # 更新任务进度
             try:
@@ -635,12 +655,12 @@ def run_continuous_stress_test(machines, duration_seconds, task_id):
                     task.current_iteration = iteration
                     db.session.commit()
             except Exception as e:
-                logger.error(f"更新任务进度失败: {e}")
+                logger.ERROR(f"更新任务进度失败: {e}")
 
             # 检查是否需要提前终止
             task = TestTask.query.filter_by(task_id=task_id).first()
             if task and task.status == 'cancelled':
-                logger.info(f"任务 {task_id} 已被取消")
+                logger.INFO(f"任务 {task_id} 已被取消")
                 break
 
             time.sleep(10)  # 每轮间隔10秒
@@ -653,9 +673,9 @@ def run_continuous_stress_test(machines, duration_seconds, task_id):
                 task.end_time = datetime.utcnow()
                 db.session.commit()
         except Exception as e:
-            logger.error(f"更新任务状态失败: {e}")
+            logger.ERROR(f"更新任务状态失败: {e}")
 
-        logger.info(f"压力测试任务 {task_id} 已完成")
+        logger.INFO(f"压力测试任务 {task_id} 已完成")
 
 
 def stress_test(machine_data):
@@ -667,8 +687,9 @@ def stress_test(machine_data):
             task_id = machine_data['task_id']
             remaining_time = machine_data.get("remaining_time", None)
             if remaining_time:
-                logger.info(
+                logger.INFO(
                     f"[线程 {threading.current_thread().name}] 机台 {machine_id} 正在执行第 {iteration} 轮压力测试，剩余时间约 {remaining_time:.1f} 秒")
+
             # 安全处理晶圆列表
             wafer_id_lst = []
             if 'sample_wafers' in machine_data:
@@ -678,16 +699,16 @@ def stress_test(machine_data):
                     elif isinstance(machine_data['sample_wafers'], list):
                         wafer_id_lst = machine_data['sample_wafers']
                 except Exception as e:
-                    logger.error(f"解析晶圆列表失败: {e}")
+                    logger.ERROR(f"解析晶圆列表失败: {e}")
 
             task = TestTask.query.filter_by(task_id=task_id).first()
             if not task:
-                logger.error(f"任务ID {task_id} 不存在")
+                logger.ERROR(f"任务ID {task_id} 不存在")
                 return
 
             # 模拟处理每个芯片
             for wafer_id in wafer_id_lst:
-                image_status  = random.choices(
+                image_status = random.choices(
                     ['success', 'failure', 'error'],
                     weights=[0.5, 0.3, 0.2],
                     k=1
@@ -703,19 +724,17 @@ def stress_test(machine_data):
                     test_task_id=task.id,
                     wafer_id=wafer_id,
                     file_status=status,
-                    image_status = image_status,
+                    image_status=image_status,
                     machine_id=machine_id,
                     iteration=iteration
                 )
                 db.session.add(test_result)
 
-            db.session.commit()
-
+            db.session.commit()  # 一次性提交所有变更
+            logger.DEBUG(f"[线程 {threading.current_thread().name}] 机台 {machine_id} 任务:{task_id} 完成")
         except Exception as e:
-            logger.error(f"压力测试出错: {e}")
-            db.session.rollback()
-
-
+            logger.ERROR(f"压力测试出错: {e}")
+            db.session.rollback()  # 发生错误时回滚事务
 
 
 # 页面路由
@@ -843,7 +862,7 @@ def upload_machine_image():
     try:
         # 使用PIL打开并验证图片
         with Image.open(file.stream) as img:
-            print(f"Image format: {img.format}, Size: {img.size}")
+
 
             # 验证尺寸
             if img.size != (680, 680):
@@ -860,7 +879,7 @@ def upload_machine_image():
 
             # 保存图片（确保质量为100%）
             img.save(filepath, 'JPEG', quality=100)
-            print(f"Image saved to: {filepath}")
+
 
             # 验证文件是否确实存在
             if not os.path.exists(filepath):
@@ -873,7 +892,7 @@ def upload_machine_image():
             })
 
     except Exception as e:
-        print(f"Error processing image: {str(e)}")
+
         return jsonify({'error': '图片处理失败', 'details': str(e)}), 500
 
 

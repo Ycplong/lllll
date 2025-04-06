@@ -1,7 +1,10 @@
+
 import logging
 import os
-from logging.handlers import RotatingFileHandler
 
+import colorlog
+from logging.handlers import RotatingFileHandler
+import inspect
 
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png'}
 
@@ -26,8 +29,18 @@ def process_sample_wafers(machine):
         return []
 
 
+class SimpleFlaskLogger:
+    """
+    简化版 Flask 日志工具，支持全局访问和大写方法调用
+    """
 
-class CustomLogger:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(SimpleFlaskLogger, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, log_dir='logs', log_filename=None, max_log_size=10 * 1024 * 1024, backup_count=5):
         """
         初始化自定义日志记录器
@@ -52,19 +65,29 @@ class CustomLogger:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)  # 设置日志记录器的最小日志级别
 
-        # 创建日志格式
-        log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        # 创建日志格式化器（包括颜色格式）
+        log_format = colorlog.ColoredFormatter(
+            '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s - [Function: %(custom_funcName)s]',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            log_colors={
+                'DEBUG': 'cyan',
+                'INFO': 'green',
+                'WARNING': 'yellow',
+                'ERROR': 'red',
+                'CRITICAL': 'magenta',
+            }
+        )
 
         # 创建文件处理器（支持日志轮换）
         file_handler = RotatingFileHandler(self.log_path, maxBytes=max_log_size, backupCount=backup_count,
                                            encoding='utf-8')
-        file_handler.setFormatter(log_format)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s - [Function: %(custom_funcName)s]'))
         file_handler.setLevel(logging.DEBUG)
 
-        # 创建控制台处理器（可选）
+        # 创建控制台处理器（带颜色）
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(log_format)
-        console_handler.setLevel(logging.INFO)  # 控制台只显示INFO级别及以上的日志
+        console_handler.setLevel(logging.DEBUG)  # 控制台显示DEBUG级别及以上日志
 
         # 将处理器添加到记录器
         self.logger.addHandler(file_handler)
@@ -75,3 +98,37 @@ class CustomLogger:
         返回日志记录器实例
         """
         return self.logger
+
+    def _log(self, level, msg, *args, **kwargs):
+        """安全的日志记录方法"""
+        # 获取当前函数的名称
+        frame = inspect.currentframe().f_back
+        function_name = frame.f_code.co_name  # 获取调用者的函数名称
+
+        # 将函数名称加入到 extra 参数中
+        extra = {"custom_funcName": function_name}
+
+        # 移除可能冲突的extra参数
+        kwargs.pop('extra', None)
+
+        # 记录日志
+        self.logger.log(level, msg, *args, extra=extra, **kwargs)
+
+    # 添加大写的日志方法
+    def DEBUG(self, msg, *args, **kwargs):
+        self._log(logging.DEBUG, msg, *args, **kwargs)
+
+    def INFO(self, msg, *args, **kwargs):
+        self._log(logging.INFO, msg, *args, **kwargs)
+
+    def WARNING(self, msg, *args, **kwargs):
+        self._log(logging.WARNING, msg, *args, **kwargs)
+
+    def ERROR(self, msg, *args, **kwargs):
+        self._log(logging.ERROR, msg, *args, **kwargs)
+
+    def CRITICAL(self, msg, *args, **kwargs):
+        self._log(logging.CRITICAL, msg, *args, **kwargs)
+
+
+

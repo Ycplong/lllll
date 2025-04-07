@@ -498,46 +498,39 @@ def get_task(task_id):
 # 看板数据API
 @app.route('/api/dashboard', methods=['GET'])
 def get_dashboard():
-    """获取看板统计数据"""
-    # 查询所有测试结果
-    all_results = db.session.query(TestResult.image_status,TestResult.file_status).filter(TestResult.image_status != "pending").all()
+    res = []
+    task_info = db.session.query(TestTask).all()
 
+    for task in task_info:
+        # 确保end_time和start_time存在
+        if not hasattr(task, 'end_time') or not hasattr(task, 'start_time'):
+            continue
 
-    # all_results = db.session.query(TestResult).all()
-    # 初始化计数器
-    total_files = len(all_results) * 2  # 每个结果有文件和图片两个状态
-    success_files = 0
-    failure_files = 0
-    error_files = 0  # 统计各类状态
+        # 处理时间计算
+        current_time = time.time()
 
-    for result in all_results:
-        # 统计文件状态
-        if result.file_status == 'success':
-            success_files += 1
-        elif result.file_status == 'failure':
-            failure_files += 1
-        elif result.file_status == 'error':
-            error_files += 1
+        # 确保end_time是时间戳
+        if isinstance(task.end_time, datetime):
+            end_time = task.end_time.timestamp()  # 转换为时间戳
+        else:
+            end_time = task.end_time  # 如果已经是时间戳，直接使用
 
-        # 统计图片状态
-        if result.image_status == 'success':
-            success_files += 1
-        elif result.image_status == 'failure':
-            failure_files += 1
-        elif result.image_status == 'error':
-            error_files += 1
-    # 计算成功率（成功数/总数）
-    success_rate = round((success_files / total_files) * 100, 2) if total_files > 0 else 0
-    data = {
-        'files_generated': total_files,
-        'success_files': success_files,
-        'failure_files': failure_files,
-        'error_files': error_files,
-        'success_rate': success_rate,
-        'last_updated': datetime.utcnow().isoformat()  # 添加最后更新时间
-    }
+        # 计算剩余时间
+        if end_time > current_time:
+            remaining_time = end_time - current_time
+        else:
+            remaining_time = 0  # 任务已结束
 
-    return jsonify(data)
+        data = {
+            'progress': getattr(task, 'progress', 0),  # 默认值0
+            'remaining_time': remaining_time,
+            'start_time': task.start_time.isoformat() if hasattr(task.start_time, 'isoformat') else str(task.start_time),
+            'success_files_generated': getattr(task, 'success_files_generated', 0)  # 默认值0
+        }
+        res.append(data)
+
+    return jsonify({'data': res})  # 返回标准JSON格式
+
 
 
 @app.route('/api/stress_test', methods=['POST'])
@@ -589,7 +582,7 @@ def stress_test_api():
         machines_id_lst=str(machines_id_lst),
         start_time=start_time,
         end_time=end_time,
-        status='running'
+        status='pending'
     )
     db.session.add(task_info)
     db.session.commit()
@@ -614,8 +607,8 @@ def stress_test_api():
 def run_continuous_stress_test(machines, duration_seconds, task_id):
     """持续运行压力测试直到达到指定时长"""
     with app.app_context():  # 添加应用上下文
-
-        end_time = time.time() + duration_seconds
+        start_time = time.time()
+        end_time = start_time + duration_seconds
         iteration = 0
 
         while time.time() < end_time and not app.config.get('SHUTDOWN_FLAG'):
@@ -650,8 +643,15 @@ def run_continuous_stress_test(machines, duration_seconds, task_id):
             try:
                 task = TestTask.query.filter_by(task_id=task_id).first()
                 if task:
-                    elapsed = time.time() - (end_time - duration_seconds)
-                    task.progress = min(100, 100 * elapsed / duration_seconds)
+                    current_time = time.time()
+
+                    # 正确的进度计算：根据任务实际的执行时间更新进度
+                    elapsed_time = current_time - task.start_time.timestamp()
+                    if elapsed_time > duration_seconds:
+                        elapsed_time = duration_seconds  # 防止进度超出100%
+
+                    task.progress = (elapsed_time / duration_seconds) * 100
+
                     task.current_iteration = iteration
                     db.session.commit()
             except Exception as e:
@@ -665,17 +665,24 @@ def run_continuous_stress_test(machines, duration_seconds, task_id):
 
             time.sleep(10)  # 每轮间隔10秒
 
-        # 标记任务完成
+        # 在任务完成时立即更新任务的结束时间和状态
         try:
             task = TestTask.query.filter_by(task_id=task_id).first()
             if task:
-                task.status = 'completed' if time.time() >= end_time else 'interrupted'
-                task.end_time = datetime.utcnow()
+                current_time = time.time()
+                task.status = 'completed' if current_time >= end_time else 'interrupted'
+                task.end_time = datetime.utcnow()  # 确保使用当前时间作为结束时间
                 db.session.commit()
         except Exception as e:
             logger.ERROR(f"更新任务状态失败: {e}")
 
         logger.INFO(f"压力测试任务 {task_id} 已完成")
+
+
+
+
+
+
 
 
 def stress_test(machine_data):

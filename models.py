@@ -47,17 +47,16 @@ class TestTask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     machines_id_lst = db.Column(db.String(100), nullable=False, default="[]")  # 字符串格式的JSON数组
     task_id = db.Column(db.String(100), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    success_files_generated = db.Column(db.String(500), default=0)
-    errors_files = db.Column(db.String(500), default=0)
-    total_files = db.Column(db.Integer, default=0)  # 总文件数量
+
     machine_id = db.Column(db.String(500), nullable=True, default="0")  # 可为 NULL，默认 "0"（字符串）
+
     batch_count = db.Column(db.Integer, default=0)
     status = db.Column(db.String(20), default='pending')  # running/completed/cancelled
     progress = db.Column(db.Float, default=0.0)
     current_iteration = db.Column(db.Integer, default=0)
     start_time = db.Column(db.DateTime)
     end_time = db.Column(db.DateTime)
+
 
 
     def __repr__(self):
